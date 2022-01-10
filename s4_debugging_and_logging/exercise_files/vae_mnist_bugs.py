@@ -13,14 +13,14 @@ from torchvision.utils import save_image
 
 # Model Hyperparameters
 dataset_path = 'datasets'
-cuda = True
+cuda = torch.cuda.is_available()
 DEVICE = torch.device("cuda" if cuda else "cpu")
 batch_size = 100
-x_dim  = 784
+x_dim = 784
 hidden_dim = 400
 latent_dim = 20
 lr = 1e-3
-epochs = 20
+epochs = 5
 
 
 # Data loading
@@ -44,16 +44,17 @@ class Encoder(nn.Module):
     def forward(self, x):
         h_       = torch.relu(self.FC_input(x))
         mean     = self.FC_mean(h_)
-        log_var  = self.FC_var(h_)                     
-                                                      
-        z        = self.reparameterization(mean, log_var)
+        log_var  = self.FC_var(h_)
+
+        std      = torch.exp(0.5*log_var)
+        z        = self.reparameterization(mean, std)
         
         return z, mean, log_var
        
-    def reparameterization(self, mean, var):
-        epsilon = torch.randn(*var.shape)
+    def reparameterization(self, mean, std,):
+        epsilon = torch.rand_like(std)
         
-        z = mean + var*epsilon
+        z = mean + std*epsilon
         
         return z
     
@@ -61,7 +62,7 @@ class Decoder(nn.Module):
     def __init__(self, latent_dim, hidden_dim, output_dim):
         super(Decoder, self).__init__()
         self.FC_hidden = nn.Linear(latent_dim, hidden_dim)
-        self.FC_output = nn.Linear(latent_dim, output_dim)
+        self.FC_output = nn.Linear(hidden_dim, output_dim)
         
     def forward(self, x):
         h     = torch.relu(self.FC_hidden(x))
@@ -84,7 +85,7 @@ class Model(nn.Module):
 encoder = Encoder(input_dim=x_dim, hidden_dim=hidden_dim, latent_dim=latent_dim)
 decoder = Decoder(latent_dim=latent_dim, hidden_dim = hidden_dim, output_dim = x_dim)
 
-model = Model(Encoder=encoder, Decoder=decoder).to(DEVICE)
+model = Model(Encoder=encoder, Decoder=decoder)
 
 from torch.optim import Adam
 
@@ -105,8 +106,8 @@ for epoch in range(epochs):
     overall_loss = 0
     for batch_idx, (x, _) in enumerate(train_loader):
         x = x.view(batch_size, x_dim)
-        x = x.to(DEVICE)
-
+        #x = x.to(DEVICE)
+        optimizer.zero_grad()
         x_hat, mean, log_var = model(x)
         loss = loss_function(x, x_hat, mean, log_var)
         
@@ -122,7 +123,7 @@ model.eval()
 with torch.no_grad():
     for batch_idx, (x, _) in enumerate(test_loader):
         x = x.view(batch_size, x_dim)
-        x = x.to(DEVICE)      
+        #x = x.to(DEVICE)
         x_hat, _, _ = model(x)       
         break
 
@@ -131,7 +132,8 @@ save_image(x_hat.view(batch_size, 1, 28, 28), 'reconstructions.png')
 
 # Generate samples
 with torch.no_grad():
-    noise = torch.randn(batch_size, latent_dim).to(DEVICE)
+    noise = torch.randn(batch_size, latent_dim)
     generated_images = decoder(noise)
     
 save_image(generated_images.view(batch_size, 1, 28, 28), 'generated_sample.png')
+
